@@ -50,13 +50,26 @@ export async function resolveConfiguration (programOpts: any): Promise<{ config:
   }
 
   const provider = getNetworkProvider(config.network)
-  let mnemonic: string
   let wallet: Wallet
-  try {
-    mnemonic = fs.readFileSync(config.mnemonic, 'ascii').trim()
-    wallet = Wallet.fromMnemonic(mnemonic).connect(provider)
-  } catch (e: any) {
-    throw new Error(`Unable to read --mnemonic ${config.mnemonic}: ${e.message as string}`)
+  // 优先使用私钥进行签名
+  if (config.privateKey != null && config.privateKey !== '') {
+    try {
+      const privatekey = process.env.BUNDLER_PRIVATE_KEY ?? config.privateKey
+      // 若以 0x 开头且长度为 66，则视为直接的私钥字符串
+      const privateKey = privatekey.startsWith('0x') === false && privatekey.length === 66
+        ? privatekey
+        : fs.readFileSync(privatekey, 'ascii').trim()
+      wallet = new Wallet(privateKey).connect(provider)
+    } catch (e: any) {
+      throw new Error(`Unable to read --privateKey ${config.privateKey}: ${e.message as string}`)
+    }
+  } else {
+    try {
+      const mnemonic = fs.readFileSync(config.mnemonic, 'ascii').trim()
+      wallet = Wallet.fromMnemonic(mnemonic).connect(provider)
+    } catch (e: any) {
+      throw new Error(`Unable to read --mnemonic ${config.mnemonic}: ${e.message as string}`)
+    }
   }
   return { config, provider, wallet }
 }
