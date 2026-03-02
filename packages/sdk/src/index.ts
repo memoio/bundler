@@ -1,6 +1,7 @@
 export { BaseAccountAPI } from './BaseAccountAPI'
 export { SimpleAccountAPI } from './SimpleAccountAPI'
-export { PaymasterAPI } from './PaymasterAPI'
+export { PaymasterAPI, PaymasterParams } from './PaymasterAPI'
+export { VerifyingPaymasterAPI } from './VerifyingPaymasterAPI'
 export { wrapProvider } from './Provider'
 export { ERC4337EthersSigner } from './ERC4337EthersSigner'
 export { ERC4337EthersProvider } from './ERC4337EthersProvider'

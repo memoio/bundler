@@ -28,6 +28,13 @@ function getInfuraNetwork (name: string): NetworkUserConfig {
   return getNetwork(infuraUrl(name))
 }
 
+function getMemoNetwork (url: string): NetworkUserConfig {
+  return {
+    url,
+    accounts: [process.env.BUNDLER_PRIVATE_KEY ?? '']
+  }
+}
+
 const config: HardhatUserConfig = {
   typechain: {
     outDir: 'src/types',
@@ -38,7 +45,8 @@ const config: HardhatUserConfig = {
       url: 'http://localhost:8545/',
       saveDeployments: false
     },
-    goerli: getInfuraNetwork('goerli')
+    goerli: getInfuraNetwork('goerli'),
+    memo: getMemoNetwork('https://chain.metamemo.one:8501')
   },
   solidity: {
     version: '0.8.23',

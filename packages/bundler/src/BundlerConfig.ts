@@ -23,6 +23,15 @@ export interface BundlerConfig {
   minUnstakeDelay: number
   autoBundleInterval: number
   autoBundleMempoolSize: number
+
+  /** 是否启用 Paymaster 模式（bundler 提供 pm_signPaymasterData 接口） */
+  paymasterEnabled: boolean
+  /** VerifyingPaymaster 合约地址 */
+  paymasterAddress?: string
+  /** Paymaster verifyingSigner 私钥 */
+  paymasterOwnerSK?: string
+  /** Paymaster 最少 deposit（wei），低于此值启动失败 */
+  minPaymasterDeposit?: string
 }
 
 // TODO: implement merging config (args -> config.js -> default) and runtime shape validation
@@ -45,7 +54,12 @@ export const BundlerConfigShape = {
   minStake: ow.string,
   minUnstakeDelay: ow.number,
   autoBundleInterval: ow.number,
-  autoBundleMempoolSize: ow.number
+  autoBundleMempoolSize: ow.number,
+
+  paymasterEnabled: ow.boolean,
+  paymasterAddress: ow.optional.string,
+  paymasterOwnerSK: ow.optional.string,
+  minPaymasterDeposit: ow.optional.string
 }
 
 // TODO: consider if we want any default fields at all
@@ -56,5 +70,6 @@ export const bundlerConfigDefault: Partial<BundlerConfig> = {
   unsafe: false,
   conditionalRpc: false,
   minStake: MIN_STAKE_VALUE,
-  minUnstakeDelay: MIN_UNSTAKE_DELAY
+  minUnstakeDelay: MIN_UNSTAKE_DELAY,
+  paymasterEnabled: false
 }

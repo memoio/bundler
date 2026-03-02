@@ -33,7 +33,18 @@ export function getNetworkProvider (url: string): JsonRpcProvider {
   return new JsonRpcProvider(url)
 }
 
-export async function resolveConfiguration (programOpts: any): Promise<{ config: BundlerConfig, provider: JsonRpcProvider, wallet: Signer }> {
+function resolvePaymasterSK (raw: string): string {
+  return (raw.startsWith('0x') && raw.length === 66) || raw.length === 64
+    ? (raw.startsWith('0x') ? raw : '0x' + raw)
+    : fs.readFileSync(raw, 'ascii').trim()
+}
+
+export async function resolveConfiguration (programOpts: any): Promise<{
+  config: BundlerConfig
+  provider: JsonRpcProvider
+  wallet: Signer
+  paymasterWallet?: Wallet
+}> {
   const commandLineParams = getCommandLineParams(programOpts)
   let fileConfig: Partial<BundlerConfig> = {}
   const configFileName = programOpts.config
@@ -52,13 +63,13 @@ export async function resolveConfiguration (programOpts: any): Promise<{ config:
   const provider = getNetworkProvider(config.network)
   let wallet: Wallet
   // 优先使用私钥进行签名
-  if (config.privateKey != null && config.privateKey !== '') {
+  const privatekey = process.env.BUNDLER_PRIVATE_KEY ?? config.privateKey
+  if (privatekey != null && privatekey !== '') {
     try {
-      const privatekey = process.env.BUNDLER_PRIVATE_KEY ?? config.privateKey
       // 若以 0x 开头且长度为 66，则视为直接的私钥字符串
-      const privateKey = privatekey.startsWith('0x') === false && privatekey.length === 66
+      const privateKey = privatekey.startsWith('0x') && privatekey.length === 66
         ? privatekey
-        : fs.readFileSync(privatekey, 'ascii').trim()
+        : privatekey.length === 64 ? '0x' + privatekey : fs.readFileSync(privatekey, 'ascii').trim()
       wallet = new Wallet(privateKey).connect(provider)
     } catch (e: any) {
       throw new Error(`Unable to read --privateKey ${config.privateKey}: ${e.message as string}`)
@@ -71,5 +82,17 @@ export async function resolveConfiguration (programOpts: any): Promise<{ config:
       throw new Error(`Unable to read --mnemonic ${config.mnemonic}: ${e.message as string}`)
     }
   }
-  return { config, provider, wallet }
+
+  let paymasterWallet: Wallet | undefined
+  const paymasterSK = process.env.PAYMASTER_PRIVATE_KEY ?? config.paymasterOwnerSK
+  if (paymasterSK != null && paymasterSK !== '') {
+    try {
+      const sk = resolvePaymasterSK(paymasterSK)
+      paymasterWallet = new Wallet(sk).connect(provider)
+    } catch (e: any) {
+      throw new Error(`Unable to read PAYMASTER_PRIVATE_KEY: ${e.message as string}`)
+    }
+  }
+
+  return { config, provider, wallet, paymasterWallet }
 }

@@ -11,12 +11,32 @@ import { formatEther, keccak256, parseEther } from 'ethers/lib/utils'
 import { Command } from 'commander'
 import { DeterministicDeployer, erc4337RuntimeVersion, SimpleAccountFactory__factory } from '@account-abstraction/utils'
 import fs from 'fs'
-import { HttpRpcClient, SimpleAccountAPI } from '@account-abstraction/sdk'
+import { HttpRpcClient, SimpleAccountAPI, VerifyingPaymasterAPI, PaymasterAPI } from '@account-abstraction/sdk'
 import { runBundler } from '../runBundler'
 import { BundlerServer } from '../BundlerServer'
 import { getNetworkProvider } from '../Config'
 
 const ENTRY_POINT = '0x0000000071727De22E5E9d8BAf0edAc6f37da032'
+
+async function loadSignerFromOpts (opts: any, provider: JsonRpcProvider): Promise<Signer> {
+  if (opts.privateKey != null && opts.privateKey !== '') {
+    let key: string = opts.privateKey
+    if (key.startsWith('0x') && key.length === 66) {
+      key = opts.privateKey
+    } else if (/^[0-9a-fA-f]{64}$/.test(key)) {
+      key = '0x' + key
+    } else {
+      key = fs.readFileSync(opts.privateKey, 'ascii').trim()
+    }
+    return new Wallet(key).connect(provider)
+  }
+  if (opts.mnemonic != null) {
+    return Wallet.fromMnemonic(fs.readFileSync(opts.mnemonic, 'ascii').trim()).connect(provider)
+  }
+  const accounts = await provider.listAccounts()
+  if (accounts.length === 0) throw new Error('must specify --mnemonic or --privateKey')
+  return provider.getSigner()
+}
 
 class Runner {
   bundlerProvider!: HttpRpcClient
@@ -35,7 +55,8 @@ class Runner {
     readonly bundlerUrl: string,
     readonly accountOwner: Signer,
     readonly entryPointAddress = ENTRY_POINT,
-    readonly index = 0
+    readonly index = 0,
+    readonly paymasterAPI?: PaymasterAPI
   ) {
   }
 
@@ -64,6 +85,7 @@ class Runner {
       factoryAddress: accountDeployer,
       owner: this.accountOwner,
       index: this.index,
+      paymasterAPI: this.paymasterAPI ?? undefined,
       overheads: {
         // perUserOp: 100000
       }
@@ -102,12 +124,14 @@ async function main (): Promise<void> {
     .version(erc4337RuntimeVersion)
     .option('--network <string>', 'network name or url', 'http://localhost:8545')
     .option('--mnemonic <file>', 'mnemonic/private-key file of signer account (to fund account)')
+    .option('--privateKey <string>', 'private key of signer (takes precedence over mnemonic)')
     .option('--bundlerUrl <url>', 'bundler URL', 'http://localhost:3000/rpc')
     .option('--entryPoint <string>', 'address of the supported EntryPoint contract', ENTRY_POINT)
     .option('--nonce <number>', 'account creation nonce. default to random (deploy new account)')
     .option('--deployFactory', 'Deploy the "account deployer" on this network (default for testnet)')
     .option('--show-stack-traces', 'Show stack traces.')
     .option('--selfBundler', 'run bundler in-process (for debugging the bundler)')
+    .option('--paymasterAddress <string>', 'VerifyingPaymaster contract address')
 
   const opts = program.parse().opts()
   const provider = getNetworkProvider(opts.network)
@@ -136,30 +160,33 @@ async function main (): Promise<void> {
     bundler = await runBundler(argv)
     await bundler.asyncStart()
   }
-  if (opts.mnemonic != null) {
-    signer = Wallet.fromMnemonic(fs.readFileSync(opts.mnemonic, 'ascii').trim()).connect(provider)
-  } else {
-    try {
-      const accounts = await provider.listAccounts()
-      if (accounts.length === 0) {
-        console.log('fatal: no account. use --mnemonic (needed to fund account)')
-        process.exit(1)
-      }
-      // for hardhat/node, use account[0]
-      signer = provider.getSigner()
-      const network = await provider.getNetwork()
-      if (network.chainId === 1337 || network.chainId === 31337) {
-        deployFactory = true
-      }
-    } catch (e) {
-      throw new Error('must specify --mnemonic')
-    }
+
+  try {
+    signer = await loadSignerFromOpts(opts, provider)
+  } catch (e: any) {
+    console.log('fatal: no account. use --mnemonic or --privateKey (needed to fund account)')
+    process.exit(1)
   }
+
+  const network = await provider.getNetwork()
+  if (network.chainId === 1337 || network.chainId === 31337) {
+    deployFactory = true
+  }
+
+  let paymasterAPI: PaymasterAPI | undefined
+  if (opts.paymasterAddress != null && opts.paymasterAddress !== '') {
+    paymasterAPI = new VerifyingPaymasterAPI(
+      opts.bundlerUrl,
+      opts.paymasterAddress,
+      network.chainId
+    )
+  }
+
   const accountOwner = new Wallet('0x'.padEnd(66, '7'))
 
   const index = opts.nonce ?? Date.now()
   console.log('using account index=', index)
-  const client = await new Runner(provider, opts.bundlerUrl, accountOwner, opts.entryPoint, index).init(deployFactory ? signer : undefined)
+  const client = await new Runner(provider, opts.bundlerUrl, accountOwner, opts.entryPoint, index, paymasterAPI).init(deployFactory ? signer : undefined)
 
   const addr = await client.getAddress()
 
@@ -171,19 +198,23 @@ async function main (): Promise<void> {
     return await provider.getBalance(addr)
   }
 
-  const bal = await getBalance(addr)
-  console.log('account address', addr, 'deployed=', await isDeployed(addr), 'bal=', formatEther(bal))
-  const gasPrice = await provider.getGasPrice()
-  // TODO: actual required val
-  const requiredBalance = gasPrice.mul(4e6)
-  if (bal.lt(requiredBalance.div(2))) {
-    console.log('funding account to', requiredBalance.toString())
-    await signer.sendTransaction({
-      to: addr,
-      value: requiredBalance.sub(bal)
-    }).then(async tx => await tx.wait())
+  if (paymasterAPI == null) {
+    const bal = await getBalance(addr)
+    console.log('account address', addr, 'deployed=', await isDeployed(addr), 'bal=', formatEther(bal))
+    const gasPrice = await provider.getGasPrice()
+    // TODO: actual required val
+    const requiredBalance = gasPrice.mul(4e6)
+    if (bal.lt(requiredBalance.div(2))) {
+      console.log('funding account to', requiredBalance.toString())
+      await signer.sendTransaction({
+        to: addr,
+        value: requiredBalance.sub(bal)
+      }).then(async tx => await tx.wait())
+    } else {
+      console.log('not funding account. balance is enough')
+    }
   } else {
-    console.log('not funding account. balance is enough')
+    console.log('using paymaster - no account funding needed')
   }
 
   const dest = addr

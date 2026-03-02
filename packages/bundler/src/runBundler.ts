@@ -5,6 +5,7 @@ import {
   deployEntryPoint,
   erc4337RuntimeVersion,
   IEntryPoint,
+  IEntryPoint__factory,
   RpcError,
   supportsRpcMethod
 } from '@account-abstraction/utils'
@@ -12,6 +13,8 @@ import { ethers, Wallet, Signer } from 'ethers'
 
 import { BundlerServer } from './BundlerServer'
 import { UserOpMethodHandler } from './UserOpMethodHandler'
+import { PaymasterSigner } from './modules/PaymasterSigner'
+import { VerifyingPaymaster__factory } from './types/factories/@account-abstraction/contracts/samples/VerifyingPaymaster__factory'
 
 import { initServer } from './modules/initServer'
 import { DebugMethodHandler } from './DebugMethodHandler'
@@ -78,6 +81,10 @@ export async function runBundler (argv: string[], overrideExit = true): Promise<
     .option('--conditionalRpc', 'Use eth_sendRawTransactionConditional RPC)')
     .option('--show-stack-traces', 'Show stack traces.')
     .option('--createMnemonic <file>', 'create the mnemonic file')
+    .option('--paymasterEnabled', 'Enable Paymaster mode (pm_signPaymasterData API)')
+    .option('--paymasterAddress <string>', 'VerifyingPaymaster contract address')
+    .option('--paymasterOwnerSK <string>', 'Paymaster verifyingSigner private key (hex or file path)')
+    .option('--minPaymasterDeposit <string>', 'Minimum paymaster deposit in wei (default: 1e18)', '1000000000000000000')
 
   const programOpts = program.parse(argv).opts()
   showStackTraces = programOpts.showStackTraces
@@ -95,7 +102,30 @@ export async function runBundler (argv: string[], overrideExit = true): Promise<
     console.log('created mnemonic file', mnemonicFile)
     process.exit(1)
   }
-  const { config, provider, wallet } = await resolveConfiguration(programOpts)
+  const { config, provider, wallet, paymasterWallet } = await resolveConfiguration(programOpts)
+
+  let paymasterSigner: PaymasterSigner | null = null
+  if (config.paymasterEnabled) {
+    if (config.paymasterAddress == null || paymasterWallet == null) {
+      console.error('FATAL: --paymasterEnabled requires --paymasterAddress and --paymasterOwnerSK')
+      process.exit(1)
+    }
+    const pmContract = VerifyingPaymaster__factory.connect(config.paymasterAddress, provider)
+    const verifyingSigner = await pmContract.verifyingSigner()
+    if (verifyingSigner.toLowerCase() !== paymasterWallet.address.toLowerCase()) {
+      console.error('FATAL: paymasterOwnerSK address', paymasterWallet.address, 'does not match VerifyingPaymaster.verifyingSigner', verifyingSigner)
+      process.exit(1)
+    }
+    const entryPointForDeposit = IEntryPoint__factory.connect(config.entryPoint, provider)
+    const deposit = await entryPointForDeposit.balanceOf(config.paymasterAddress)
+    const minDeposit = config.minPaymasterDeposit != null ? config.minPaymasterDeposit : '1000000000000000000'
+    if (deposit.lt(minDeposit)) {
+      console.error('FATAL: Paymaster deposit', deposit.toString(), 'is below minimum', minDeposit)
+      process.exit(1)
+    }
+    console.log('Paymaster enabled:', config.paymasterAddress, 'verifyingSigner:', paymasterWallet.address, 'deposit:', deposit.toString())
+    paymasterSigner = new PaymasterSigner(config.paymasterAddress, paymasterWallet, provider)
+  }
 
   const {
     // name: chainName,
@@ -164,18 +194,12 @@ export async function runBundler (argv: string[], overrideExit = true): Promise<
     debugHandler,
     config,
     provider,
-    wallet
+    wallet,
+    paymasterSigner
   )
 
-  void bundlerServer.asyncStart().then(async () => {
-    console.log('Bundle interval (seconds)', execManagerConfig.autoBundleInterval)
-    console.log('connected to network', await provider.getNetwork().then(net => {
-      return {
-        name: net.name,
-        chainId: net.chainId
-      }
-    }))
-    console.log(`running on http://localhost:${config.port}/rpc`)
+  void bundlerServer.asyncStart().then(() => {
+    console.log(`Bundler running on http://localhost:${config.port}/rpc`)
   })
 
   return bundlerServer

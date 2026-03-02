@@ -263,22 +263,67 @@ export abstract class BaseAccountAPI {
       maxPriorityFeePerGas: maxPriorityFeePerGas as any
     }
 
+    let preVerificationGasOverride: BigNumberish | undefined
     if (this.paymasterAPI != null) {
-      // fill (partial) preVerificationGas (all except the cost of the generated paymasterAndData)
-      const pmFields = await this.paymasterAPI.getTemporaryPaymasterData(partialUserOp)
-      if (pmFields != null) {
-        partialUserOp = {
-          ...partialUserOp,
-          paymaster: pmFields?.paymaster,
-          paymasterPostOpGasLimit: pmFields?.paymasterPostOpGasLimit,
-          paymasterVerificationGasLimit: pmFields?.paymasterVerificationGasLimit,
-          paymasterData: pmFields?.paymasterData
-        } as any
+      // For paymasters that sign a hash (e.g. VerifyingPaymaster), we must compute preVerificationGas
+      // with a placeholder BEFORE calling the paymaster, so the paymaster signs the same hash the chain will verify.
+      const getPlaceholder = this.paymasterAPI.getPlaceholderPaymasterData
+      if (typeof getPlaceholder === 'function') {
+        const pmPlaceholder = await getPlaceholder.call(this.paymasterAPI)
+        if (pmPlaceholder != null) {
+          const partialWithPlaceholder = {
+            ...partialUserOp,
+            paymaster: pmPlaceholder.paymaster,
+            paymasterPostOpGasLimit: pmPlaceholder.paymasterPostOpGasLimit,
+            paymasterVerificationGasLimit: pmPlaceholder.paymasterVerificationGasLimit,
+            paymasterData: pmPlaceholder.paymasterData
+          } as any
+          let preGas = await this.getPreVerificationGas(partialWithPlaceholder)
+          partialUserOp = { ...partialUserOp, preVerificationGas: preGas } as any
+          const pmFields = await this.paymasterAPI.getTemporaryPaymasterData(partialUserOp)
+          if (pmFields != null) {
+            partialUserOp = {
+              ...partialUserOp,
+              paymaster: pmFields?.paymaster,
+              paymasterPostOpGasLimit: pmFields?.paymasterPostOpGasLimit,
+              paymasterVerificationGasLimit: pmFields?.paymasterVerificationGasLimit,
+              paymasterData: pmFields?.paymasterData
+            } as any
+            const preGasReal = await this.getPreVerificationGas(partialUserOp)
+            if (BigNumber.from(preGasReal).gt(preGas)) {
+              partialUserOp = { ...partialUserOp, preVerificationGas: preGasReal } as any
+              const pmFields2 = await this.paymasterAPI.getTemporaryPaymasterData(partialUserOp)
+              if (pmFields2 != null) {
+                partialUserOp = {
+                  ...partialUserOp,
+                  paymaster: pmFields2?.paymaster,
+                  paymasterPostOpGasLimit: pmFields2?.paymasterPostOpGasLimit,
+                  paymasterVerificationGasLimit: pmFields2?.paymasterVerificationGasLimit,
+                  paymasterData: pmFields2?.paymasterData
+                } as any
+              }
+              preGas = preGasReal
+            }
+            preVerificationGasOverride = preGas
+          }
+        }
+      }
+      if (preVerificationGasOverride == null) {
+        const pmFields = await this.paymasterAPI.getTemporaryPaymasterData(partialUserOp)
+        if (pmFields != null) {
+          partialUserOp = {
+            ...partialUserOp,
+            paymaster: pmFields?.paymaster,
+            paymasterPostOpGasLimit: pmFields?.paymasterPostOpGasLimit,
+            paymasterVerificationGasLimit: pmFields?.paymasterVerificationGasLimit,
+            paymasterData: pmFields?.paymasterData
+          } as any
+        }
       }
     }
     return {
       ...partialUserOp,
-      preVerificationGas: await this.getPreVerificationGas(partialUserOp),
+      preVerificationGas: preVerificationGasOverride ?? await this.getPreVerificationGas(partialUserOp),
       signature: ''
     }
   }

@@ -18,6 +18,7 @@ import { BundlerConfig } from './BundlerConfig'
 import { UserOpMethodHandler } from './UserOpMethodHandler'
 import { Server } from 'http'
 import { DebugMethodHandler } from './DebugMethodHandler'
+import { PaymasterSigner } from './modules/PaymasterSigner'
 
 import Debug from 'debug'
 
@@ -32,7 +33,8 @@ export class BundlerServer {
     readonly debugHandler: DebugMethodHandler,
     readonly config: BundlerConfig,
     readonly provider: Provider,
-    readonly wallet: Signer
+    readonly wallet: Signer,
+    readonly paymasterSigner: PaymasterSigner | null = null
   ) {
     this.app = express()
     this.app.use(cors())
@@ -221,6 +223,12 @@ export class BundlerServer {
         break
       case 'debug_bundler_getStakeStatus':
         result = await this.debugHandler.getStakeStatus(params[0], params[1])
+        break
+      case 'pm_signPaymasterData':
+        if (this.paymasterSigner == null) {
+          throw new RpcError('Paymaster mode not enabled (pm_signPaymasterData unavailable)', -32601)
+        }
+        result = await this.paymasterSigner.signPaymasterData(params[0])
         break
       default:
         throw new RpcError(`Method ${method} is not supported`, -32601)
