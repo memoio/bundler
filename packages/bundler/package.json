@@ -11,6 +11,8 @@
   "scripts": {
     "runop": "ts-node ./src/runner/runop.ts",
     "bundler": "TS_NODE_TRANSPILE_ONLY=1 ts-node ./src/exec.ts --config ./localconfig/bundler.config.json",
+    "entrypoint:deposit-info": "ts-node ./scripts/getEntryPointDepositInfo.ts",
+    "entrypoint:deposit": "ts-node ./scripts/depositToEntryPoint.ts",
     "clear": "rm -rf dist artifacts cache src/types",
     "hardhat-compile": "hardhat compile",
     "hardhat-node": "npx hardhat node --no-deploy",

@@ -1,7 +1,7 @@
 {
   "gasFactor": "1",
-  "port": "3000",
-  "network": "http://127.0.0.1:8545",
+  "port": "9526",
+  "network": "https://chain.metamemo.one:8501",
   "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
   "paymasterAddress": "0x865A869789149B58B058a24950C09869491980c2",
   "beneficiary": "0x18b392706443BaEb03525826cf4BAE5413bF7C4a",
