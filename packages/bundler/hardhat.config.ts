@@ -29,9 +29,10 @@ function getInfuraNetwork (name: string): NetworkUserConfig {
 }
 
 function getMemoNetwork (url: string): NetworkUserConfig {
+  const pk = process.env.BUNDLER_PRIVATE_KEY
   return {
     url,
-    accounts: [process.env.BUNDLER_PRIVATE_KEY ?? '']
+    accounts: (pk != null && pk.replace(/^0x/, '').length === 64) ? [pk] : { mnemonic }
   }
 }
 

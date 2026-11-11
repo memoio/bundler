@@ -15,6 +15,7 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "sourceMap": true,
+    "types": ["node", "mocha"],
     "outDir": "dist"
   },
   "include": [
