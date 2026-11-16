@@ -214,12 +214,12 @@ export class BundleManager {
         continue
       }
       // [GREP-020] - renamed from [SREP-030]
-      if (paymaster != null && (paymasterStatus === ReputationStatus.THROTTLED ?? (stakedEntityCount[paymaster] ?? 0) > THROTTLED_ENTITY_BUNDLE_COUNT)) {
+      if (paymaster != null && (paymasterStatus === ReputationStatus.THROTTLED && (stakedEntityCount[paymaster] ?? 0) >= THROTTLED_ENTITY_BUNDLE_COUNT)) {
         debug('skipping throttled paymaster', entry.userOp.sender, entry.userOp.nonce)
         continue
       }
       // [GREP-020] - renamed from [SREP-030]
-      if (factory != null && (deployerStatus === ReputationStatus.THROTTLED ?? (stakedEntityCount[factory] ?? 0) > THROTTLED_ENTITY_BUNDLE_COUNT)) {
+      if (factory != null && (deployerStatus === ReputationStatus.THROTTLED && (stakedEntityCount[factory] ?? 0) >= THROTTLED_ENTITY_BUNDLE_COUNT)) {
         debug('skipping throttled factory', entry.userOp.sender, entry.userOp.nonce)
         continue
       }

@@ -72,7 +72,7 @@ export class ReputationManager {
     Object.keys(this.entries).forEach(addr => {
       const entry = this.entries[addr]
       entry.opsSeen = Math.floor(entry.opsSeen * 23 / 24)
-      entry.opsIncluded = Math.floor(entry.opsSeen * 23 / 24)
+      entry.opsIncluded = Math.floor(entry.opsIncluded * 23 / 24)
       if (entry.opsIncluded === 0 && entry.opsSeen === 0) {
         // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
         delete this.entries[addr]
