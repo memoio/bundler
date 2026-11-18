@@ -37,6 +37,13 @@ export let showStackTraces = false
 export async function connectContracts (
   wallet: Signer,
   entryPointAddress: string): Promise<{ entryPoint: IEntryPoint }> {
+  const provider = wallet.provider
+  if (provider != null && (await provider.getNetwork()).chainId === 204) {
+    if (!ethers.utils.isAddress(entryPointAddress) || await provider.getCode(entryPointAddress) === '0x') {
+      throw new Error('Configured 204 EntryPoint is not deployed')
+    }
+    return { entryPoint: IEntryPoint__factory.connect(entryPointAddress, wallet) }
+  }
   const entryPoint = await deployEntryPoint(wallet.provider as any, wallet as any)
   return {
     entryPoint
