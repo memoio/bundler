@@ -103,9 +103,18 @@ export async function runBundler (argv: string[], overrideExit = true): Promise<
     process.exit(1)
   }
   const { config, provider, wallet, paymasterWallet } = await resolveConfiguration(programOpts)
+  const { chainId } = await provider.getNetwork()
+  let mainnetDidProxy: string | undefined
 
   let paymasterSigner: PaymasterSigner | null = null
   if (config.paymasterEnabled) {
+    if (chainId === 204) {
+      const target = process.env.BUNDLER_204_DID_PROXY ?? ''
+      if (!ethers.utils.isAddress(target) || await provider.getCode(target) === '0x' || config.debugRpc === true) {
+        throw new Error('204 sponsorship requires a deployed BUNDLER_204_DID_PROXY and disabled debug RPC')
+      }
+      mainnetDidProxy = ethers.utils.getAddress(target)
+    }
     if (config.paymasterAddress == null || paymasterWallet == null) {
       console.error('FATAL: --paymasterEnabled requires --paymasterAddress and --paymasterOwnerSK')
       process.exit(1)
@@ -126,11 +135,6 @@ export async function runBundler (argv: string[], overrideExit = true): Promise<
     console.log('Paymaster enabled:', config.paymasterAddress, 'verifyingSigner:', paymasterWallet.address, 'deposit:', deposit.toString())
     paymasterSigner = new PaymasterSigner(config.paymasterAddress, paymasterWallet, provider)
   }
-
-  const {
-    // name: chainName,
-    chainId
-  } = await provider.getNetwork()
 
   if (chainId === 31337 || chainId === 1337) {
     if (config.debugRpc == null) {
@@ -195,7 +199,8 @@ export async function runBundler (argv: string[], overrideExit = true): Promise<
     config,
     provider,
     wallet,
-    paymasterSigner
+    paymasterSigner,
+    mainnetDidProxy
   )
 
   void bundlerServer.asyncStart().then(() => {

@@ -19,6 +19,7 @@ import { UserOpMethodHandler } from './UserOpMethodHandler'
 import { Server } from 'http'
 import { DebugMethodHandler } from './DebugMethodHandler'
 import { PaymasterSigner } from './modules/PaymasterSigner'
+import { isSponsoredDidCreation } from './modules/DidSponsorshipPolicy'
 
 import Debug from 'debug'
 
@@ -34,7 +35,8 @@ export class BundlerServer {
     readonly config: BundlerConfig,
     readonly provider: Provider,
     readonly wallet: Signer,
-    readonly paymasterSigner: PaymasterSigner | null = null
+    readonly paymasterSigner: PaymasterSigner | null = null,
+    readonly mainnetDidProxy?: string
   ) {
     this.app = express()
     this.app.use(cors())
@@ -46,7 +48,9 @@ export class BundlerServer {
     // eslint-disable-next-line @typescript-eslint/no-misused-promises
     this.app.post('/rpc', this.rpc.bind(this))
 
-    this.httpServer = this.app.listen(this.config.port)
+    this.httpServer = mainnetDidProxy == null
+      ? this.app.listen(this.config.port)
+      : this.app.listen(this.config.port, '127.0.0.1')
     this.startingPromise = this._preflightCheck()
   }
 
@@ -227,6 +231,9 @@ export class BundlerServer {
       case 'pm_signPaymasterData':
         if (this.paymasterSigner == null) {
           throw new RpcError('Paymaster mode not enabled (pm_signPaymasterData unavailable)', -32601)
+        }
+        if (this.mainnetDidProxy != null && !isSponsoredDidCreation(params?.[0]?.callData, this.mainnetDidProxy)) {
+          throw new RpcError('Paymaster only sponsors DID creation on the configured proxy', -32602)
         }
         result = await this.paymasterSigner.signPaymasterData(params[0])
         break
