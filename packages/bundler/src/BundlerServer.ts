@@ -52,7 +52,9 @@ export class BundlerServer {
     if (mainnetDidProxy == null) {
       this.httpServer.listen(this.config.port)
     } else {
-      this.httpServer.listen(this.config.port, '127.0.0.1')
+      const port = Number(this.config.port)
+      if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid 204 Bundler HTTP port')
+      this.httpServer.listen({ port, host: '127.0.0.1' })
     }
     this.startingPromise = this._preflightCheck()
   }
