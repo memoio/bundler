@@ -16,7 +16,7 @@ import {
 
 import { BundlerConfig } from './BundlerConfig'
 import { UserOpMethodHandler } from './UserOpMethodHandler'
-import { Server } from 'http'
+import { createServer, Server } from 'http'
 import { DebugMethodHandler } from './DebugMethodHandler'
 import { PaymasterSigner } from './modules/PaymasterSigner'
 import { isSponsoredDidCreation } from './modules/DidSponsorshipPolicy'
@@ -48,9 +48,12 @@ export class BundlerServer {
     // eslint-disable-next-line @typescript-eslint/no-misused-promises
     this.app.post('/rpc', this.rpc.bind(this))
 
-    this.httpServer = mainnetDidProxy == null
-      ? this.app.listen(this.config.port)
-      : this.app.listen(this.config.port, '127.0.0.1')
+    this.httpServer = createServer(this.app)
+    if (mainnetDidProxy == null) {
+      this.httpServer.listen(this.config.port)
+    } else {
+      this.httpServer.listen(this.config.port, '127.0.0.1')
+    }
     this.startingPromise = this._preflightCheck()
   }
 
